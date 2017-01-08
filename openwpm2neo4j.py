@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-# Copyright (c) 2013, 2016 "Rob van Eijk", "Floor Terra", "Vincent Toubiana"
+# Copyright (c) 2013, 2016 Rob van Eijk, Vincent Toubiana, and Floor Terra
 #
 # Permission to use, copy, modify, and/or distribute this software for any 
 # purpose with or without fee is hereby granted, provided that the above 
@@ -16,7 +16,6 @@
 
 
 import sqlite3
-import json
 import sys
 import time
 import datetime
@@ -50,13 +49,12 @@ def filter_header( key, value):
 		return False
 	return True
 
-def parse_headers(raw_headers):
+def parse_headers(headers):
 	my_header = {}
-	headers = json.loads(raw_headers)
-	for x in headers:
+	for x in headers.strip().split("\n"):
+		 x = x.split(":", 1)
 		 if filter_header(x[0],x[1]): 
 			my_header[x[0]] = x[1]
-	#print my_header
 	return my_header
 	
 def entropy(s):
@@ -72,7 +70,7 @@ def get_host_str(urlstring):
     if not netloc:
         return ""
     if len(netloc.split(".")) > 2:
-        if netloc.split(".")[-2] == "co":  # Hack for co.uk domains
+        if netloc.endswith("co.uk"): # Hack for co.uk domains
             return ".".join(netloc.split(".")[-3:])
         return ".".join(netloc.split(".")[-2:])
     return netloc
@@ -108,7 +106,7 @@ def start():
     global g, port
     ## LOGIN/PASSWORD TO REPLACE ##
 
-    g = Graph(host= "localhost", http_port = port, user= "neo4j", password= XXX)
+    g = Graph(host= "localhost", http_port = port, user= "neo4j", password= "neo4j")
 
    
 # Called when a http response is received. 
@@ -128,7 +126,7 @@ def process_request( host, url, referrer, head, top_url, top_host ):
     global g
     # Get the hostname from the corresponding request
     if len(host.split(".")) > 2:
-        if host.split(".")[-2] == "co": # Hack for co.uk domains
+        if host.endswith("co.uk"): # Hack for co.uk domains
             host = ".".join(host.split(".")[-3:])
         else:
             host = ".".join(host.split(".")[-2:])
@@ -177,30 +175,23 @@ def get_host( url ):
 	o = urlparse(url)
 	return o.hostname
 
-def run_query(db_path,arraysize=100000, start_index = 0):
+def run_query(db_path):
 	connection = sqlite3.connect(db_path)
 	cursor = connection.cursor()
 	sql_command = "SELECT crawl_id, url, referrer, headers, top_url, time_stamp FROM http_requests"
 	cursor.execute(sql_command)
-	i= 0
-	while True:
-			if i>= start_index:
-				results = cursor.fetchmany(arraysize)
-				if not results:
-					break
-				for row in results:
-					url = row[1]
-					referrer = row[2]
-					headers = row[3]
-					top_url = row[4]
-					host = get_host(url)
-					top_host = get_host(top_url)
-					try:
-						process_request( host, url, referrer, headers, top_url, top_host )
-					except :
-						print "Could not parse requst:" + host
-			i = i+ arraysize
-			print "The script has processed " + str(i) + " lines"
+	for row in cursor.fetchall():
+		url = row[1]
+		referrer = row[2]
+		headers = row[3]
+		top_url = row[4]
+		host = get_host(url)
+		top_host = get_host(top_url)
+
+		try:
+			process_request( host, url, referrer, headers, top_url, top_host )
+		except :
+			print "Could not parse requst:" + host
 			
 	connection.close()
 
@@ -216,18 +207,15 @@ def main(argv):
     # filters out bad arguments
     global port
     port = 7474 
-    start_index = 0
     if len(argv) < 1 :
         print_help_message()
         return
     for i in xrange(2, len(argv), 2):
         if argv[i] == "-port":
             port = int(argv[i+1])
-        if argv[i] == "-start":
-            start_index = int(argv[i+1])
     db_path = argv[1]  
     start()  
-    run_query(db_path, 20000,start_index)
+    run_query(db_path)
 
 
 
